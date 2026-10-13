@@ -360,7 +360,7 @@ footer p{margin:.2rem 0;max-width:none}
       <dt>Methods</dt><dd>Rule-based text classification, TF-IDF (term frequency–inverse document frequency) term weighting, a nearest-centroid similarity model trained on the AMG outcome alignment map, and heuristic indices for alignment strength, mapping confidence and cognitive load. Results are deterministic and reproducible from the same input.</dd>
       <dt>Intended use</dt><dd>Decision support for faculty curriculum review. Outputs are analytic estimates that require faculty validation and are not accreditation determinations.</dd>
       <dt>Frameworks</dt><dd>ACEN 2023 Standards and Criteria (Standard 4, Criterion 4.7); QSEN pre-licensure competencies (QSEN Institute); AMG School of Nursing end-of-program student learning outcomes.</dd>
-      <dt>Cite as</dt><dd>Hernandez, J. P. T. (2026). <i>Course Syllabus Mapper and Revision Recommender</i> (Version 1.0) [Interactive dashboard]. AMG School of Nursing. <a href="https://claude.ai/artifact/7PPjWKe9EDaAc16VhtYcyu" target="_blank" rel="noopener">https://claude.ai/artifact/7PPjWKe9EDaAc16VhtYcyu</a> <button type="button" class="btn sm" data-citeopen="1">Other citation styles</button></dd>
+      <dt>Cite as</dt><dd>Hernandez, J. P. T. (2026). <i>Course Syllabus Mapper and Revision Recommender</i> (Version 1.0) [Interactive dashboard]. AMG School of Nursing. <a href="https://stellarlifetech.github.io/syllabusmapper/" target="_blank" rel="noopener">https://stellarlifetech.github.io/syllabusmapper/</a> <button type="button" class="btn sm" data-citeopen="1">Other citation styles</button></dd>
       <dt>License</dt><dd>This work is licensed under <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/" target="_blank" rel="license noopener">Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)</a>.</dd>
     </dl>
   </div>
@@ -2025,7 +2025,7 @@ function citeDates(d){
   return {mla: d.getDate() + " " + (M[d.getMonth()].length > 4 ? M[d.getMonth()].slice(0,3) + "." : M[d.getMonth()]) + " " + d.getFullYear(), long: M[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(), har: d.getDate() + " " + M[d.getMonth()] + " " + d.getFullYear(), van: d.getFullYear() + " " + M[d.getMonth()].slice(0,3) + " " + d.getDate()};
 }
 function refEntries(st, d){
-  const D = citeDates(d), U = "https://claude.ai/artifact/7PPjWKe9EDaAc16VhtYcyu", ACEN_U = "https://www.acenursing.org", Q_U = "https://www.qsen.org/competencies-pre-licensure-ksas", C_DOI = "https://doi.org/10.1016/j.outlook.2007.02.006", S_DOI = "https://doi.org/10.1207/s15516709cog1202_4";
+  const D = citeDates(d), U = "https://stellarlifetech.github.io/syllabusmapper/", ACEN_U = "https://www.acenursing.org", Q_U = "https://www.qsen.org/competencies-pre-licensure-ksas", C_DOI = "https://doi.org/10.1016/j.outlook.2007.02.006", S_DOI = "https://doi.org/10.1207/s15516709cog1202_4";
   const R = {
     APA: {
       acen: [["Accreditation Commission for Education in Nursing. (2023). "], ["ACEN 2023 standards and criteria", 1], [". "], [ACEN_U, 2]],
@@ -2086,7 +2086,7 @@ const CITE_IN = {
 const citeIn = (st, ...keys) => st === "Vancouver" ? "[" + keys.map(k => CITE_ORDER.indexOf(k) + 1).sort((a,b) => a - b).join(", ") + "]" : "(" + keys.map(k => (CITE_IN[st] || CITE_IN.APA)[k]).join("; ") + ")";
 
 /* ---------- Narrative report (Word; layout follows the chosen citation style, APA 7th edition by default) ---------- */
-const TOOL_URL = "https://claude.ai/artifact/7PPjWKe9EDaAc16VhtYcyu";
+const TOOL_URL = "https://stellarlifetech.github.io/syllabusmapper/";
 const TOOL_CITE = "Hernandez, J. P. T. (2026). Course Syllabus Mapper and Revision Recommender (Version 1.0) [Interactive dashboard]. AMG School of Nursing.";
 const F_INK = "#111111", F_MID = "#7d7d7d", F_LIGHT = "#c9c9c9", F_FONT = "Arial";
 function figCanvas(w, h){ const c = document.createElement("canvas"); c.width = w * 2; c.height = h * 2; const g = c.getContext("2d"); g.scale(2, 2); g.fillStyle = "#fff"; g.fillRect(0, 0, w, h); g.fillStyle = F_INK; g.strokeStyle = F_INK; g.lineWidth = 1; return {c, g, w, h}; }
@@ -2574,7 +2574,7 @@ boot();
 
 /* ---------- Cite this tool: APA, MLA, Chicago, Harvard, Vancouver, BibTeX, RIS ---------- */
 (() => {
-  const URL_ = "https://claude.ai/artifact/7PPjWKe9EDaAc16VhtYcyu", d = new Date(), M = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const URL_ = "https://stellarlifetech.github.io/syllabusmapper/", d = new Date(), M = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const mla = d.getDate() + " " + (M[d.getMonth()].length > 4 ? M[d.getMonth()].slice(0,3) + "." : M[d.getMonth()]) + " " + d.getFullYear();
   const har = d.getDate() + " " + M[d.getMonth()] + " " + d.getFullYear(), van = d.getFullYear() + " " + M[d.getMonth()].slice(0,3) + " " + d.getDate();
   const iso = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
