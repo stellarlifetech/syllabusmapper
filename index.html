@@ -1921,6 +1921,10 @@ function revisedChanges(c){
 const RVtok = s => RVflat(s).toLowerCase().match(/[a-z0-9]+/g) || [];
 const RVlead = /^\s*(?:\(?\d{1,2}[.)]|\(?[a-z][.)]|[-•●▪◦])\s+/i;
 /* For an outline entry whose rewrite only adds a clause at the end, the clause can be added to the cell that holds the entry's content even when the entry was read from several merged cells. */
+/* Text added at the end of a week entry reads as its own short sentence: "Focus: …". */
+const RVappend = (tx, suf, kind) => { if (kind !== "topic"){ return /[.;:,]\s*$/.test(tx) ? suf.replace(/^[;:]\s*/, " ") : suf; }
+  const core = suf.replace(/^[\s;:,.\u2013\u2014-]*(with (an )?emphasis on\s*)?/i, "").replace(/[\s.;,]+$/, ""); if (!core) return "";
+  const end = tx.replace(/\s+$/, ""); return (/[.!?]$/.test(end) ? " " : /[;:,]$/.test(end) ? " " : ". ") + "Focus: " + core + "."; };
 const RVsuffix = ch => { if (!ch.orig || !ch.neu) return ""; const o = RVflat(ch.orig).trim().replace(/[.;:,]+$/, ""), n = RVflat(ch.neu).trim(); return n.toLowerCase().startsWith(o.toLowerCase()) && n.length > o.length ? n.slice(o.length) : ""; };
 const RVcontain = (cellText, ch) => { const C = RVtok(cellText), O = RVtok(ch.orig); if (C.length < 4) return 0; const m = new Map(); O.forEach(w => m.set(w, (m.get(w) || 0) + 1)); let n = 0; C.forEach(w => { const v = m.get(w); if (v){ n++; m.set(w, v - 1); } }); return n / C.length; };
 function RVfuzzy(text, ch){
@@ -2082,7 +2086,7 @@ async function reviseDocx(blob, changes, hl, c, clean){
     for (const p of ps){ const sp = RVsplice(ptext(p), ch); if (sp){ hit = [[p], sp]; break; } }
     if (!hit) for (const tc of kids(body, "tc")){ const cp = kids(tc, "p").filter(p => p.parentNode === tc && textRuns(p).length); if (cp.length < 2 || cp.some(p => done.has(p))) continue; const sp = RVsplice(cp.map(ptext).join(" "), ch); if (sp){ hit = [cp, sp]; break; } }
     if (!hit) for (let n = 2; n <= 4 && !hit; n++) for (let i = 0; i + n <= ps.length; i++){ const g = ps.slice(i, i + n); if (g.some(p => p.parentNode !== g[0].parentNode)) continue; const sp = RVsplice(g.map(ptext).join(" "), ch); if (sp){ hit = [g, sp]; break; } }
-    if (!hit){ let best = null; const tryF = (paras, text) => { const sp = RVfuzzy(text, ch); if (sp && (!best || sp.score > best[1].score)) best = [paras, sp]; };
+    if (!hit && !(ch.kind === "topic" && RVsuffix(ch))){ let best = null; const tryF = (paras, text) => { const sp = RVfuzzy(text, ch); if (sp && (!best || sp.score > best[1].score)) best = [paras, sp]; };
       ps.forEach(p => tryF([p], ptext(p)));
       kids(body, "tc").forEach(tc => { const cp = kids(tc, "p").filter(p => p.parentNode === tc && textRuns(p).length); if (cp.length >= 2 && !cp.some(p => done.has(p))) tryF(cp, cp.map(ptext).join(" ")); });
       hit = best; }
@@ -2094,7 +2098,12 @@ async function reviseDocx(blob, changes, hl, c, clean){
       if (lab) kids(body, "tr").forEach(tr => { const tcs = [...tr.childNodes].filter(x => x.localName === "tc"); if (tcs.length < 2 || RVkey(cellP(tcs[0]).map(ptext).join(" ")) !== lab) return; const sc = tcs.slice(1).reduce((s, tc) => s + RVcontain(cellP(tc).map(ptext).join(" "), ch), 0); const target = tcs.slice(1).map(cellP).find(cp => cp.length && !cp.some(p => done.has(p))); if (target && sc > 0 && (!rowBest || sc > rowBest.sc)) rowBest = {sc, paras:target}; });
       if (rowBest) best = {paras:rowBest.paras, s:1, n:0};
       else kids(body, "tc").forEach(tc => { const cp = cellP(tc); if (cp.length && !cp.some(p => done.has(p))) consider(cp); });
-      if (best){ const lp = best.paras[best.paras.length - 1], runs = textRuns(lp), rl = runs[runs.length - 1], tx = ptext(lp); rl.parentNode.insertBefore(mkRun(rl, /[.;:,]\s*$/.test(tx) ? suf.replace(/^[;:]\s*/, " ") : suf, hl), rl.nextSibling); best.paras.forEach(p => done.add(p)); if (ch.kind) lastOf[ch.kind] = lp; placed.push(ch); return; } }
+      if (best){ const lp = best.paras[best.paras.length - 1], runs = textRuns(lp), rl = runs[runs.length - 1], tx = ptext(lp); rl.parentNode.insertBefore(mkRun(rl, RVappend(tx, suf, ch.kind), hl), rl.nextSibling); best.paras.forEach(p => done.add(p)); if (ch.kind) lastOf[ch.kind] = lp; placed.push(ch); return; } }
+    if (!hit && ch.kind === "topic" && RVsuffix(ch)){ const suf = RVsuffix(ch), head = RVflat(ch.orig).split(/;\s*/)[0].trim().toLowerCase();
+      const p1 = head.length >= 12 && ps.find(p => RVflat(ptext(p)).toLowerCase().includes(head));
+      if (p1){ let tc = p1.parentNode; while (tc && tc.localName !== "tc" && tc.localName !== "body") tc = tc.parentNode;
+        const cp = tc && tc.localName === "tc" ? kids(tc, "p").filter(p => textRuns(p).length) : [p1];
+        if (!cp.some(p => done.has(p))){ const lp = cp[cp.length - 1], runs = textRuns(lp), rl = runs[runs.length - 1], tx = ptext(lp); rl.parentNode.insertBefore(mkRun(rl, RVappend(tx, suf, ch.kind), hl), rl.nextSibling); cp.forEach(p => done.add(p)); lastOf.topic = lp; placed.push(ch); return; } } }
     if (hit){ writeInto(hit[0], hit[1]); hit[0].forEach(p => done.add(p)); const p0 = hit[0][0];
       if (!ch.neu && !RVflat(hit[1].pre + hit[1].post).replace(RVlead, "").replace(/[\s.;:,]/g, "")){ hit[0].forEach(p => { if (p.parentNode && kids(p.parentNode, "p").length > 1) p.parentNode.removeChild(p); }); } else { nodeOf.set(RVkey(ch.orig), p0); if (ch.kind) lastOf[ch.kind] = p0; }
       placed.push(ch); } else unplaced.push(ch);
@@ -2268,12 +2277,18 @@ async function addMappingNotes(blob, c, changes){
   for (const it of items){
     if (!["slo", "objective", "topic"].includes(it.kind)) continue;
     let target = null;
-    if (it.kind === "topic" && it.label){ const lab = RVkey(it.label);
-      for (const tr of kids(body, "tr")){ const tcs = [...tr.childNodes].filter(x => x.localName === "tc"); if (tcs.length < 2) continue; const firstTxt = kids(tcs[0], "p").map(ptext).join(" ");
-        if (RVkey(firstTxt) !== lab) continue; const score = tcs.slice(1).reduce((s, tc) => s + RVcontain(kids(tc, "p").map(ptext).join(" "), {orig:it.text}), 0); const p0 = kids(tcs[1], "p").find(p => ptext(p).trim()) || kids(tcs[0], "p")[0];
+    if (it.kind === "topic" && it.label){ const nk = s => RVkey(s).replace(/[^a-z0-9]/g, ""), lab = nk(it.label);
+      for (const tr of kids(body, "tr")){ const tcs = [...tr.childNodes].filter(x => x.localName === "tc"); if (tcs.length < 2) continue; const firstK = nk(kids(tcs[0], "p").map(ptext).join(" "));
+        if (firstK !== lab && !(firstK === "" && nk(kids(tcs[1], "p").map(ptext).join(" ")) === lab)) continue; const score = tcs.slice(1).reduce((s, tc) => s + RVcontain(kids(tc, "p").map(ptext).join(" "), {orig:it.text}), 0); const p0 = kids(tcs[1], "p").find(p => ptext(p).trim()) || kids(tcs[0], "p")[0];
         if (p0 && !used.has(p0) && (!target || score > target.s)) target = {p:p0, s:score}; }
       target = target && target.p; }
     if (!target){ let best = null; for (const p of paras){ if (used.has(p)) continue; const sp = RVsplice(ptext(p), {orig:it.text, neu:it.text}) ? {score:2} : RVfuzzy(ptext(p), {orig:it.text, neu:it.text}); if (sp && (!best || sp.score > best.s)) best = {p, s:sp.score}; } target = best && best.p; }
+    if (!target && it.kind === "topic" && it.text){ const nk = s => RVkey(s).replace(/[^a-z0-9]/g, "");
+      const wants = [nk(it.text).slice(0, 40), ...it.text.split(/;\s*/).map(s => nk(s).slice(0, 40)).filter(s => s.length >= 12).sort((a, b) => b.length - a.length)];
+      for (const want of wants){ if (target || want.length < 6) continue;
+        for (const tr of kids(body, "tr")){ const tcs = [...tr.childNodes].filter(x => x.localName === "tc");
+          const tc = tcs.find(tc => nk(kids(tc, "p").map(ptext).join(" ")).includes(want)); if (!tc) continue;
+          const p0 = kids(tc, "p").find(p => ptext(p).trim() && !used.has(p)); if (p0){ target = p0; break; } } } }
     if (!target) continue;
     used.add(target); anchor(target, (it.label ? it.label + ". " : "") + noteFor(it, c.prog)); placed++;
   }
