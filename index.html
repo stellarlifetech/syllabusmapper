@@ -1939,10 +1939,10 @@ function revisedBar(A){
   const c = A.c, n = revisedChanges(c).length, avail = rewrites(A).filter(r => r.rewrite).length, applied = c.items.filter(it => it.orig != null && it.orig !== it.text).length;
   const kind = /\.docx$/i.test(c.file || "") ? "your original Word file, keeping its layout" : c.hasFile ? "the text of your original " + esc((c.file || "").split(".").pop().toUpperCase()) + " file, rebuilt as a Word document" : "the syllabus text, rebuilt as a Word document";
   return `<div class="rwbar" id="rwBar"><h3 style="margin:0">Revised syllabus (Word)</h3>
-    <p class="hint" style="max-width:90ch">Tick <b>Accept</b> beside each rewrite you want, or accept all of them. The revised syllabus is built from ${kind}, with each accepted rewrite replacing its original wording. The <b>clean version</b> has every accepted correction already in place, with no highlighting, no notes and no list of revisions to place by hand. Both use the standard syllabus template: the school logo and address in the header, and the revision date and time (Eastern Time) with page numbers in the footer.${applied ? ` Wording already replaced with "Use this wording" (${applied}) is included too.` : ""}</p>
+    <p class="hint" style="max-width:90ch">Tick <b>Accept</b> beside each rewrite you want, or accept all of them. The revised syllabus is built from ${kind}, with each accepted rewrite replacing its original wording. The <b>clean version</b> has every accepted correction already in place, with no highlighting, no notes and no list of revisions to place by hand. The <b>mapping notes</b> version is the clean version for faculty, with a plain-language comment beside each outcome, objective and week saying which ACEN and QSEN concepts and program outcomes it covers, a "How to read" page at the front and a "Mapping at a glance" page at the end. Both use the standard syllabus template: the school logo and address in the header, and the revision date and time (Eastern Time) with page numbers in the footer.${applied ? ` Wording already replaced with "Use this wording" (${applied}) is included too.` : ""}</p>
     <div class="row"><button type="button" class="btn sm" id="rwAccAll"${avail ? "" : " disabled"}>Accept all recommended rewrites (${avail})</button><button type="button" class="btn sm" id="rwAccNone"${(c.accepted || []).length ? "" : " disabled"}>Clear accepted</button>
       <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="rwHl" checked> Highlight the changed wording</label></div>
-    <div class="row"><button type="button" class="btn pri" id="rwDocx"${n ? "" : " disabled"}>Download revised syllabus with changes highlighted (Word)</button><button type="button" class="btn pri" id="rwDocxClean"${n ? "" : " disabled"} style="background:#1b6e3a;border-color:#1b6e3a">Download clean revised syllabus (Word)</button><span id="rwCount">${n ? n + " change" + (n === 1 ? "" : "s") + " accepted" : "Accept at least one rewrite first."}</span><button type="button" class="btn sm" id="stdTpl">Blank standard syllabus template (Word)</button><p class="status" id="rwDocStatus" role="status"></p></div></div>`;
+    <div class="row"><button type="button" class="btn pri" id="rwDocx"${n ? "" : " disabled"}>Download revised syllabus with changes highlighted (Word)</button><button type="button" class="btn pri" id="rwDocxClean"${n ? "" : " disabled"} style="background:#1b6e3a;border-color:#1b6e3a">Download clean revised syllabus (Word)</button><button type="button" class="btn pri" id="rwDocxMap" style="background:#5b2c76;border-color:#5b2c76" title="For faculty: plain-language margin comments showing what each outcome, objective and week covers, a key page and a Mapping at a glance page">Download revised syllabus with mapping notes (Word)</button><span id="rwCount">${n ? n + " change" + (n === 1 ? "" : "s") + " accepted" : "Accept at least one rewrite first."}</span><button type="button" class="btn sm" id="stdTpl">Blank standard syllabus template (Word)</button><p class="status" id="rwDocStatus" role="status"></p></div></div>`;
 }
 const RVflat = s => String(s || "").replace(/[‘’‛′]/g,"'").replace(/[“”″]/g,'"').replace(/[–—−]/g,"-").replace(/[   ]/g," ").replace(/\s+/g," ");
 const RVkey = s => RVflat(s).trim().replace(/[.;:,]+$/,"").toLowerCase();
@@ -2164,19 +2164,151 @@ async function reviseFromText(c, text, changes, hl, clean){
   const doc = new D.Document({styles:{default:{document:{run:{font:"Calibri", size:22}}}}, sections:[{...stdHeaderFooter(D, c, stdStamp()), children:kids}]});
   return {blob: await D.Packer.toBlob(doc), placed, unplaced};
 }
+/* ---------- Revised syllabus with mapping notes: plain-language margin comments on every outcome, objective and week,
+   a "How to read the mapping notes" key page at the front, and a "Mapping at a glance" page at the end. ---------- */
+const PLAIN = {
+  acen:{a:"respecting diversity and the social factors that affect health", b:"using research and evidence", c:"finding and judging good health information", d:"working with other health workers and assigning tasks", e:"acting as a professional nurse within the nurse's role"},
+  qsen:{p:"care built around the patient's needs and wishes", t:"teamwork with the health care team", e:"using the best evidence in care", q:"making care better over time", s:"keeping patients safe and preventing errors", i:"using health records and technology"}
+};
+const PLAIN_NAME = {acen:{a:"Diversity and social factors", b:"Research and evidence", c:"Information literacy", d:"Teamwork and delegation", e:"Professional role"}, qsen:{p:"Patient-centered care", t:"Teamwork", e:"Evidence-based practice", q:"Quality improvement", s:"Safety", i:"Informatics"}};
+const COLHEAD = {acen:{a:"4.7a", b:"4.7b", c:"4.7c", d:"4.7d", e:"4.7e"}, qsen:{p:"PCC", t:"Team", e:"EBP", q:"QI", s:"Safe", i:"Info"}};
+const MARK = ["○", "●", "●●", "●●●"], MARKWORD = ["missing", "only lightly covered", "covered", "well covered"];
+/* The mapping after the accepted corrections: each changed entry is mapped again from its new wording. */
+function mappedAfter(c, changes){
+  const byKey = new Map(changes.filter(ch => ch.orig != null).map(ch => [RVkey(ch.orig), ch.neu]));
+  const items = c.items.map(it => { const neu = byKey.get(RVkey(it.text)) ?? byKey.get(RVkey(it.orig || "")); if (neu == null || neu === "") return neu === "" ? null : {...it};
+    const r = ruleMap(fullText({...it, text:neu}), c.prog); return {...it, text:neu, epslo:r.epslo, acen:r.acen, qsen:r.qsen, revised:true}; }).filter(Boolean);
+  return items;
+}
+function noteFor(it, prog){
+  const parts = [...(it.acen || []).map(k => PLAIN.acen[k] + " (ACEN " + COLHEAD.acen[k] + ")"), ...(it.qsen || []).map(k => PLAIN.qsen[k] + " (QSEN " + QSEN[k].short + ")")];
+  const ep = (it.epslo || []).map(id => (EPS[prog].find(e => e.id === id) || {}).short).filter(Boolean).map(s => s.replace(/^EPSLO (\d+) /, "Program outcome $1: "));
+  let s = parts.length ? "This " + (it.kind === "topic" ? "week" : it.kind === "slo" ? "outcome" : "objective") + " covers: " + parts.join("; ") + "." : "This " + (it.kind === "topic" ? "week" : "entry") + " does not show any ACEN or QSEN concept yet. If the content fits, name one, for example safety or teamwork.";
+  if (ep.length) s += " It supports " + ep.join("; ") + ".";
+  if (it.revised) s += " The wording was updated in this revision.";
+  return s;
+}
+const wx = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const wRun = (t, o) => { o = o || {}; return `<w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>${o.b ? "<w:b/>" : ""}${o.i ? "<w:i/>" : ""}${o.color ? `<w:color w:val="${o.color}"/>` : ""}<w:sz w:val="${o.sz || 21}"/></w:rPr><w:t xml:space="preserve">${wx(t)}</w:t></w:r>`; };
+const wPara = (runs, o) => { o = o || {}; return `<w:p><w:pPr>${o.keep ? "<w:keepNext/>" : ""}<w:spacing w:before="${o.before || 0}" w:after="${o.after == null ? 80 : o.after}"/>${o.ind ? `<w:ind w:left="${o.ind}" w:hanging="240"/>` : ""}${o.jc ? `<w:jc w:val="${o.jc}"/>` : ""}</w:pPr>${runs}</w:p>`; };
+const wH = t => wPara(wRun(t, {b:true, color:STD_BLUE, sz:30}), {after:120, keep:true});
+const wH2 = t => wPara(wRun(t, {b:true, color:STD_BLUE, sz:23}), {before:120, after:60, keep:true});
+const wBullet = t => wPara(wRun("•  ") + t, {ind:360});
+function wTable(rows, widths, o){
+  o = o || {}; const bd = '<w:top w:val="single" w:sz="4" w:color="8C8C8C"/><w:left w:val="single" w:sz="4" w:color="8C8C8C"/><w:bottom w:val="single" w:sz="4" w:color="8C8C8C"/><w:right w:val="single" w:sz="4" w:color="8C8C8C"/><w:insideH w:val="single" w:sz="4" w:color="8C8C8C"/><w:insideV w:val="single" w:sz="4" w:color="8C8C8C"/>';
+  const cell = (v, w, head, center) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${head ? '<w:shd w:val="clear" w:color="auto" w:fill="E8ECF7"/>' : ""}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:before="20" w:after="20"/>${center ? '<w:jc w:val="center"/>' : ""}</w:pPr>${wRun(v, {b:head, sz:o.sz || 17})}</w:p></w:tc>`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="${widths.reduce((a, b) => a + b, 0)}" w:type="dxa"/><w:tblBorders>${bd}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${widths.map(w => `<w:gridCol w:w="${w}"/>`).join("")}</w:tblGrid>${rows.map((r, i) => `<w:tr>${i === 0 ? "<w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>" : "<w:trPr><w:cantSplit/></w:trPr>"}${r.map((v, k) => cell(v, widths[k], i === 0 || (o.firstColHead && k === 0), k > 0 && o.centerRest)).join("")}</w:tr>`).join("")}</w:tbl>`;
+}
+const wBreak = () => '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+function mapKeyXml(c){
+  const cn = [c.code, c.title].filter(Boolean).join(" ");
+  const gl = TGT.map(t => [(t.dim === "acen" ? "ACEN " : "QSEN ") + (t.dim === "acen" ? COLHEAD.acen[t.k] : QSEN[t.k].short), PLAIN_NAME[t.dim][t.k], PLAIN[t.dim][t.k]]);
+  return wH("How to read the mapping notes") +
+    wPara(wRun("This copy of the " + (cn || "course") + " syllabus shows how each part of it links to the program's goals. The notes are for faculty. Students should get the clean version.")) +
+    wH2("What you will see") +
+    wBullet(wRun("Comments in the right margin. ", {b:true}) + wRun("Each outcome, objective and week has a comment. It says, in plain words, which ACEN and QSEN concepts it covers and which program outcome it supports.")) +
+    wBullet(wRun("No comment? ", {b:true}) + wRun("In Word, click Review, then Show Markup, and tick Comments. To hide them again, untick it.")) +
+    wBullet(wRun("The last page, \"Mapping at a glance.\" ", {b:true}) + wRun("A grid shows every entry and the concepts it covers. A check mark (✓) means a match.")) +
+    wBullet(wRun("Dots show how well a concept is covered: ", {b:true}) + wRun("●●● well covered, ●● covered, ● only lightly covered, ○ missing.")) +
+    wH2("What the short names mean") +
+    wPara(wRun("ACEN is the nursing program accreditor. Its Criterion 4.7 lists five concepts every nursing curriculum must include. QSEN lists six skills that every new nurse needs. Program outcomes are what our graduates must be able to do.")) +
+    wTable([["Code", "Short name", "In plain words"], ...gl], [1500, 2500, 5360], {firstColHead:false}) +
+    wPara(wRun("Two words used in the notes: an outcome ", {sz:19}) + wRun("promises", {i:true, sz:19}) + wRun(" what students will learn; a week ", {sz:19}) + wRun("covers", {i:true, sz:19}) + wRun(" it in class. A concept is well covered when it is both promised and covered.", {sz:19}), {before:120}) +
+    wBreak();
+}
+function mapGlanceXml(c, items){
+  const A = analyzeCourse({...c, items}), kinds = ["slo", "objective", "topic"];
+  const short = (t, n) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : t; };
+  const head = ["Entry", ...TGT.map(t => t.dim === "acen" ? COLHEAD.acen[t.k] : COLHEAD.qsen[t.k])];
+  const rows = items.filter(it => kinds.includes(it.kind)).map(it => [(it.label || "") + ": " + short(it.text, 46), ...TGT.map(t => (it[t.dim] || []).includes(t.k) ? "✓" : "")]);
+  const tot = ["Total", ...TGT.map(t => String(items.filter(it => (it[t.dim] || []).includes(t.k)).length))];
+  const mark = ["How well covered", ...A.targets.map(t => MARK[t.cls])];
+  const lines = [];
+  A.targets.forEach(t => { const nm = PLAIN_NAME[t.dim][t.k] + " (" + (t.dim === "acen" ? "ACEN " + COLHEAD.acen[t.k] : "QSEN") + ")";
+    if (t.cls === 0) lines.push(nm + " is missing. Add it to an outcome and to a week where it fits.");
+    else if (t.st >= 1 && t.tg === 0) lines.push(nm + " is promised in " + (t.st === 1 ? "one outcome" : t.st + " outcomes") + " but not covered in any week. Add it to a week.");
+    else if (t.tg >= 1 && t.st === 0) lines.push(nm + " is covered in " + (t.tg === 1 ? "one week" : t.tg + " weeks") + " but not promised in any outcome. Name it in an outcome.");
+    else if (t.cls === 3) lines.push(nm + " is well covered: promised " + t.st + " time" + (t.st === 1 ? "" : "s") + " and covered " + t.tg + " time" + (t.tg === 1 ? "" : "s") + ".");
+    else lines.push(nm + " is " + MARKWORD[t.cls] + ".");
+  });
+  const order = l => /missing/.test(l) ? 0 : /not covered in any week|not promised/.test(l) ? 1 : /well covered/.test(l) ? 3 : 2;
+  lines.sort((a, b) => order(a) - order(b));
+  const fix = lines.filter(l => order(l) <= 1).length;
+  return wBreak() + wH("Mapping at a glance") +
+    wPara(wRun("Each row is one part of the syllabus. A check mark (✓) means it covers that concept. Columns: 4.7a–4.7e are the ACEN concepts; PCC = patient-centered care, Team = teamwork, EBP = evidence-based practice, QI = quality improvement, Safe = safety, Info = informatics.", {sz:19})) +
+    wTable([head, ...rows, tot, mark], [3530, ...TGT.map(() => 530)], {sz:15, centerRest:true}) +
+    wH2("What this means") +
+    wPara(wRun("After the corrections, " + nWord(A.targets.filter(t => t.cls === 3).length) + " of the 11 concepts are well covered (promised in an outcome and covered in the weeks). " + (fix ? capFirst(nWord(fix)) + (fix === 1 ? " needs" : " need") + " attention; " + (fix === 1 ? "it is" : "they are") + " listed first." : "None needs attention."), {b:true})) +
+    lines.map(l => wBullet(wRun(l))).join("") +
+    wPara(wRun("Prepared with the Course Syllabus Mapper and Revision Recommender. Faculty should check these notes before using them as accreditation evidence.", {i:true, sz:18, color:"595959"}), {before:160});
+}
+/* Add the comments, the key page and the glance page to a revised (clean) Word file. */
+async function addMappingNotes(blob, c, changes){
+  await loadScript(CDN + "jszip/3.10.1/jszip.min.js");
+  const zip = await window.JSZip.loadAsync(await blob.arrayBuffer()), W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main", PR = "http://schemas.openxmlformats.org/package/2006/relationships";
+  const doc = new DOMParser().parseFromString(await zip.file("word/document.xml").async("string"), "application/xml");
+  const kids = (n, t) => [...n.getElementsByTagNameNS(W, t)], ptext = p => kids(p, "t").map(t => t.textContent).join("");
+  const body = kids(doc, "body")[0], items = mappedAfter(c, changes);
+  // existing comments, if any
+  let cdoc = null, nextId = 0; const cf = zip.file("word/comments.xml");
+  if (cf){ cdoc = new DOMParser().parseFromString(await cf.async("string"), "application/xml"); kids(cdoc, "comment").forEach(x => { nextId = Math.max(nextId, +x.getAttributeNS(W, "id") + 1); }); }
+  else cdoc = new DOMParser().parseFromString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="${W}"></w:comments>`, "application/xml");
+  const used = new Set(), now = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  const anchor = (p, text) => {
+    const id = String(nextId++), mk = n => doc.createElementNS(W, "w:" + n);
+    const s = mk("commentRangeStart"); s.setAttributeNS(W, "w:id", id); const e = mk("commentRangeEnd"); e.setAttributeNS(W, "w:id", id);
+    const firstRun = [...p.childNodes].find(x => x.localName === "r" || x.localName === "hyperlink");
+    p.insertBefore(s, firstRun || null); p.appendChild(e);
+    const r = mk("r"), ref = mk("commentReference"); ref.setAttributeNS(W, "w:id", id); r.appendChild(ref); p.appendChild(r);
+    const cm = cdoc.createElementNS(W, "w:comment"); cm.setAttributeNS(W, "w:id", id); cm.setAttributeNS(W, "w:author", "Syllabus Mapper"); cm.setAttributeNS(W, "w:initials", "SM"); cm.setAttributeNS(W, "w:date", now);
+    const cp = cdoc.createElementNS(W, "w:p"), cr = cdoc.createElementNS(W, "w:r"), ct = cdoc.createElementNS(W, "w:t"); ct.setAttributeNS("http://www.w3.org/XML/1998/namespace", "xml:space", "preserve"); ct.textContent = text; cr.appendChild(ct); cp.appendChild(cr); cm.appendChild(cp); cdoc.documentElement.appendChild(cm);
+  };
+  const paras = kids(body, "p").filter(p => ptext(p).trim());
+  let placed = 0;
+  for (const it of items){
+    if (!["slo", "objective", "topic"].includes(it.kind)) continue;
+    let target = null;
+    if (it.kind === "topic" && it.label){ const lab = RVkey(it.label);
+      for (const tr of kids(body, "tr")){ const tcs = [...tr.childNodes].filter(x => x.localName === "tc"); if (tcs.length < 2) continue; const firstTxt = kids(tcs[0], "p").map(ptext).join(" ");
+        if (RVkey(firstTxt) !== lab) continue; const score = tcs.slice(1).reduce((s, tc) => s + RVcontain(kids(tc, "p").map(ptext).join(" "), {orig:it.text}), 0); const p0 = kids(tcs[1], "p").find(p => ptext(p).trim()) || kids(tcs[0], "p")[0];
+        if (p0 && !used.has(p0) && (!target || score > target.s)) target = {p:p0, s:score}; }
+      target = target && target.p; }
+    if (!target){ let best = null; for (const p of paras){ if (used.has(p)) continue; const sp = RVsplice(ptext(p), {orig:it.text, neu:it.text}) ? {score:2} : RVfuzzy(ptext(p), {orig:it.text, neu:it.text}); if (sp && (!best || sp.score > best.s)) best = {p, s:sp.score}; } target = best && best.p; }
+    if (!target) continue;
+    used.add(target); anchor(target, (it.label ? it.label + ". " : "") + noteFor(it, c.prog)); placed++;
+  }
+  // key page first, glance page last (before the section properties)
+  const frag = xml => { const d = new DOMParser().parseFromString(`<w:body xmlns:w="${W}">${xml}</w:body>`, "application/xml"); return [...d.documentElement.childNodes].map(n => doc.importNode(n, true)); };
+  const first = body.firstChild; frag(mapKeyXml(c)).forEach(n => body.insertBefore(n, first));
+  const sect = [...body.childNodes].reverse().find(x => x.localName === "sectPr") || null; frag(mapGlanceXml(c, items)).forEach(n => body.insertBefore(n, sect));
+  zip.file("word/document.xml", new XMLSerializer().serializeToString(doc));
+  zip.file("word/comments.xml", new XMLSerializer().serializeToString(cdoc));
+  if (!cf){
+    const relPath = "word/_rels/document.xml.rels", rd = new DOMParser().parseFromString(await zip.file(relPath).async("string"), "application/xml"), root = rd.documentElement;
+    const r = rd.createElementNS(PR, "Relationship"); r.setAttribute("Id", "rIdMapNotes"); r.setAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"); r.setAttribute("Target", "comments.xml"); root.appendChild(r);
+    zip.file(relPath, new XMLSerializer().serializeToString(rd));
+    const ctd = new DOMParser().parseFromString(await zip.file("[Content_Types].xml").async("string"), "application/xml"), ct = ctd.documentElement;
+    const o = ctd.createElementNS(ct.namespaceURI, "Override"); o.setAttribute("PartName", "/word/comments.xml"); o.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"); ct.appendChild(o);
+    zip.file("[Content_Types].xml", new XMLSerializer().serializeToString(ctd));
+  }
+  return {blob:await zip.generateAsync({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}), notes:placed, entries:items.filter(it => ["slo", "objective", "topic"].includes(it.kind)).length};
+}
+
 async function downloadRevised(c, clean){
+  const map = clean === "map"; if (map) clean = true;
   const st = $("rwDocStatus"), changes = revisedChanges(c), hl = !clean && (!$("rwHl") || $("rwHl").checked);
-  if (!changes.length){ st.textContent = "Accept at least one rewrite first."; return; }
-  st.textContent = "Building the revised syllabus…";
+  if (!changes.length && !map){ st.textContent = "Accept at least one rewrite first."; return; }
+  st.textContent = map ? "Building the revised syllabus with mapping notes…" : "Building the revised syllabus…";
   try{
     let orig = null;
     if (c.hasFile){ try{ orig = c.localFile && !canSave ? await idbDo("readonly", x => x.get(c.id)) : await fetchFile(uid, c); }catch(e){ orig = null; } }
     const isDocx = /\.docx$/i.test(c.file || "") && orig;
     const res = isDocx ? await reviseDocx(orig, changes, hl, c, clean) : await reviseFromText(c, await ensureText(c) || c.text, changes, hl, clean);
-    const base = (c.file ? c.file.replace(/\.[^.]+$/, "") : (c.code || "syllabus").replace(/\s+/g,"-")) + (clean ? "-revised-clean-" : "-revised-") + new Date().toISOString().slice(0,10).replace(/-/g,"") + ".docx";
+    if (map){ const mr = await addMappingNotes(res.blob, c, changes); res.blob = mr.blob; res.notes = mr.notes; res.entries = mr.entries; }
+    const base = (c.file ? c.file.replace(/\.[^.]+$/, "") : (c.code || "syllabus").replace(/\s+/g,"-")) + (map ? "-revised-mapping-notes-" : clean ? "-revised-clean-" : "-revised-") + new Date().toISOString().slice(0,10).replace(/-/g,"") + ".docx";
     const ok = await save(base, res.blob, {type:"revised_syllabus", course:c.code, file:c.file, format:"docx", entries:res.placed.length}, "rwDocStatus");
     if (ok && window.CSM) CSM.extra(c, "Revised syllabus downloaded");
-    if (ok) st.textContent += " " + res.placed.length + " change" + (res.placed.length === 1 ? "" : "s") + " made in the text" + (res.unplaced.length ? (clean ? "; " + res.unplaced.length + " outline " + (res.unplaced.length === 1 ? "entry" : "entries") + " could not be matched to the wording in the file and " + (res.unplaced.length === 1 ? "was" : "were") + " left as written: " + res.unplaced.map(x => x.label).join(", ") + "." : "; " + res.unplaced.length + " could not be found exactly and are listed at the end of the document to place by hand.") : ".") + (clean ? " Clean version: no highlighting and no notes." : "") + (isDocx ? "" : (c.hasFile ? " The original was not a Word file, so its layout was rebuilt." : ""));
+    if (ok) st.textContent += " " + res.placed.length + " change" + (res.placed.length === 1 ? "" : "s") + " made in the text" + (res.unplaced.length ? (clean ? "; " + res.unplaced.length + " outline " + (res.unplaced.length === 1 ? "entry" : "entries") + " could not be matched to the wording in the file and " + (res.unplaced.length === 1 ? "was" : "were") + " left as written: " + res.unplaced.map(x => x.label).join(", ") + "." : "; " + res.unplaced.length + " could not be found exactly and are listed at the end of the document to place by hand.") : ".") + (map ? " Mapping notes: a margin comment on " + res.notes + " of " + res.entries + " outcomes, objectives and weeks, a key page at the front and a \"Mapping at a glance\" page at the end." : clean ? " Clean version: no highlighting and no notes." : "") + (isDocx ? "" : (c.hasFile ? " The original was not a Word file, so its layout was rebuilt." : ""));
   }catch(e){ st.textContent = "The revised syllabus couldn't be built: " + (e && e.message ? e.message : "unknown error") + "."; }
 }
 function paintRwBar(c){ const b = $("rwBar"); if (!b) return; const n = revisedChanges(c).length; $("rwDocx").disabled = !n; if ($("rwDocxClean")) $("rwDocxClean").disabled = !n; $("rwAccNone").disabled = !(c.accepted || []).length; $("rwCount").textContent = n ? n + " change" + (n === 1 ? "" : "s") + " accepted" : "Accept at least one rewrite first."; }
@@ -2187,10 +2319,11 @@ document.addEventListener("change", e => {
   persist(c); paintRwBar(c);
 });
 document.addEventListener("click", e => {
-  const t = e.target.closest("button"); if (!t || !["rwAccAll","rwAccNone","rwDocx","rwDocxClean"].includes(t.id)) return;
+  const t = e.target.closest("button"); if (!t || !["rwAccAll","rwAccNone","rwDocx","rwDocxClean","rwDocxMap"].includes(t.id)) return;
   const c = state.courses.find(x => x.id === an.course); if (!c) return;
   if (t.id === "rwDocx"){ downloadRevised(c); return; }
   if (t.id === "rwDocxClean"){ downloadRevised(c, true); return; }
+  if (t.id === "rwDocxMap"){ downloadRevised(c, "map"); return; }
   c.accepted = t.id === "rwAccAll" ? rewrites(analyzeCourse(c)).filter(r => r.rewrite).map(r => r.idx) : [];
   persist(c); document.querySelectorAll("input.rwacc").forEach(x => { x.checked = c.accepted.includes(+x.dataset.rwacc); }); paintRwBar(c);
   if ($("rwDocStatus")) $("rwDocStatus").textContent = t.id === "rwAccAll" ? "Accepted all " + c.accepted.length + " recommended rewrites." : "Cleared the accepted rewrites.";
